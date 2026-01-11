@@ -346,6 +346,92 @@ func TestListIssues(t *testing.T) {
 	}
 }
 
+func TestListSubIssues(t *testing.T) {
+	tests := []struct {
+		name           string
+		opts           ListSubIssuesOptions
+		serverResponse func(w http.ResponseWriter, r *http.Request)
+		wantCount      int
+		wantErr        bool
+	}{
+		{
+			name: "lists sub-issues of parent",
+			opts: ListSubIssuesOptions{
+				Owner:       "testowner",
+				Repo:        "testrepo",
+				ParentIssue: 42,
+			},
+			serverResponse: func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != "GET" {
+					t.Errorf("expected GET, got %s", r.Method)
+				}
+				if r.URL.Path != "/repos/testowner/testrepo/issues/42/sub_issues" {
+					t.Errorf("unexpected path: %s", r.URL.Path)
+				}
+
+				w.WriteHeader(http.StatusOK)
+				json.NewEncoder(w).Encode([]map[string]interface{}{
+					{"id": 12345, "number": 43, "title": "Sub-issue 1", "html_url": "https://github.com/testowner/testrepo/issues/43"},
+					{"id": 12346, "number": 44, "title": "Sub-issue 2", "html_url": "https://github.com/testowner/testrepo/issues/44"},
+				})
+			},
+			wantCount: 2,
+			wantErr:   false,
+		},
+		{
+			name: "empty sub-issue list",
+			opts: ListSubIssuesOptions{
+				Owner:       "testowner",
+				Repo:        "testrepo",
+				ParentIssue: 42,
+			},
+			serverResponse: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+				json.NewEncoder(w).Encode([]map[string]interface{}{})
+			},
+			wantCount: 0,
+			wantErr:   false,
+		},
+		{
+			name: "parent not found",
+			opts: ListSubIssuesOptions{
+				Owner:       "testowner",
+				Repo:        "testrepo",
+				ParentIssue: 999,
+			},
+			serverResponse: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusNotFound)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"message": "Not Found",
+				})
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(tt.serverResponse))
+			defer server.Close()
+
+			client := &Client{
+				HTTPClient: server.Client(),
+				BaseURL:    server.URL,
+			}
+
+			issues, err := client.ListSubIssues(tt.opts)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ListSubIssues() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if !tt.wantErr && len(issues) != tt.wantCount {
+				t.Errorf("ListSubIssues() returned %d issues, want %d", len(issues), tt.wantCount)
+			}
+		})
+	}
+}
+
 func TestGetIssue(t *testing.T) {
 	tests := []struct {
 		name           string

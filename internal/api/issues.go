@@ -180,6 +180,56 @@ type ListIssuesOptions struct {
 	PerPage int
 }
 
+// ListSubIssuesOptions contains parameters for listing sub-issues.
+type ListSubIssuesOptions struct {
+	Owner       string
+	Repo        string
+	ParentIssue int
+}
+
+// ListSubIssues lists sub-issues of a parent issue.
+func (c *Client) ListSubIssues(opts ListSubIssuesOptions) ([]Issue, error) {
+	debug.Log("ListSubIssues", "owner", opts.Owner, "repo", opts.Repo, "parent_issue", opts.ParentIssue)
+
+	url := fmt.Sprintf("%s/repos/%s/%s/issues/%d/sub_issues",
+		c.BaseURL, opts.Owner, opts.Repo, opts.ParentIssue)
+	debug.Log("ListSubIssues", "url", url)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		debug.Error("ListSubIssues", err, "stage", "new_request")
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	debug.Log("ListSubIssues", "action", "sending_request")
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		debug.Error("ListSubIssues", err, "stage", "do_request")
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	debug.Log("ListSubIssues", "status_code", resp.StatusCode)
+	if resp.StatusCode != http.StatusOK {
+		var errResp struct {
+			Message string `json:"message"`
+		}
+		json.NewDecoder(resp.Body).Decode(&errResp)
+		apiErr := newAPIError(resp.StatusCode, errResp.Message, "list sub-issues")
+		debug.Error("ListSubIssues", apiErr, "status", resp.StatusCode)
+		return nil, apiErr
+	}
+
+	var issues []Issue
+	if err := json.NewDecoder(resp.Body).Decode(&issues); err != nil {
+		debug.Error("ListSubIssues", err, "stage", "decode_response")
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	debug.Log("ListSubIssues", "result_count", len(issues))
+	return issues, nil
+}
+
 // ListIssues lists issues in a repository.
 func (c *Client) ListIssues(opts ListIssuesOptions) ([]Issue, error) {
 	debug.Log("ListIssues", "owner", opts.Owner, "repo", opts.Repo, "state", opts.State, "per_page", opts.PerPage)

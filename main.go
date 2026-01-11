@@ -39,6 +39,12 @@ func run() error {
 	case "create":
 		debug.Log("run", "action", "runCreate", "create_args", args[1:])
 		return runCreate(args[1:])
+	case "list":
+		debug.Log("run", "action", "runList", "list_args", args[1:])
+		return runList(args[1:])
+	case "edit":
+		debug.Log("run", "action", "runEdit", "edit_args", args[1:])
+		return runEdit(args[1:])
 	case "help", "--help", "-h":
 		debug.Log("run", "action", "printUsage", "reason", "help_flag")
 		return printUsage()
@@ -148,13 +154,172 @@ func runCreate(args []string) error {
 	return runner.Run(*opts)
 }
 
+func runList(args []string) error {
+	debug.Log("runList", "args", args)
+
+	opts, err := cmd.ParseListFlags(args)
+	if err != nil {
+		debug.Error("runList", err, "stage", "ParseListFlags")
+		return err
+	}
+	debug.Log("runList", "parsed_opts", fmt.Sprintf("%+v", opts))
+
+	// Resolve repository
+	var owner, repoName, host string
+	if opts.Repo != "" {
+		debug.Log("runList", "repo_source", "flag", "repo_flag", opts.Repo)
+		owner, repoName, err = cmd.ParseRepo(opts.Repo)
+		if err != nil {
+			debug.Error("runList", err, "stage", "ParseRepo")
+			return err
+		}
+		if repo, err := repository.Current(); err == nil {
+			host = repo.Host
+		} else {
+			host = "github.com"
+		}
+	} else {
+		debug.Log("runList", "repo_source", "current_directory")
+		repo, err := repository.Current()
+		if err != nil {
+			debug.Error("runList", err, "stage", "repository.Current")
+			return fmt.Errorf("could not determine repository: %w (use --repo to specify)", err)
+		}
+		owner = repo.Owner
+		repoName = repo.Name
+		host = repo.Host
+	}
+
+	// Determine API base URL based on host
+	var baseURL string
+	if host == "github.com" || host == "" {
+		baseURL = "https://api.github.com"
+	} else {
+		baseURL = fmt.Sprintf("https://%s/api/v3", host)
+	}
+
+	// Create authenticated HTTP client
+	httpClient, err := api.DefaultHTTPClient()
+	if err != nil {
+		debug.Error("runList", err, "stage", "DefaultHTTPClient")
+		return fmt.Errorf("failed to create HTTP client: %w", err)
+	}
+
+	client := &internalapi.Client{
+		HTTPClient: httpClient,
+		BaseURL:    baseURL,
+	}
+
+	// Set up prompter for interactive mode
+	var p cmd.Prompter
+	t := term.FromEnv()
+	isStdinTerminal := term.IsTerminal(os.Stdin)
+	isOutputTerminal := t.IsTerminalOutput()
+
+	if isStdinTerminal && isOutputTerminal {
+		p = prompter.New(os.Stdin, os.Stdout, os.Stderr)
+	}
+
+	runner := &cmd.ListRunner{
+		Client:   client,
+		Owner:    owner,
+		Repo:     repoName,
+		Out:      os.Stdout,
+		Prompter: p,
+	}
+
+	return runner.Run(*opts)
+}
+
+func runEdit(args []string) error {
+	debug.Log("runEdit", "args", args)
+
+	opts, err := cmd.ParseEditFlags(args)
+	if err != nil {
+		debug.Error("runEdit", err, "stage", "ParseEditFlags")
+		return err
+	}
+	debug.Log("runEdit", "parsed_opts", fmt.Sprintf("%+v", opts))
+
+	// Resolve repository
+	var owner, repoName, host string
+	if opts.Repo != "" {
+		debug.Log("runEdit", "repo_source", "flag", "repo_flag", opts.Repo)
+		owner, repoName, err = cmd.ParseRepo(opts.Repo)
+		if err != nil {
+			debug.Error("runEdit", err, "stage", "ParseRepo")
+			return err
+		}
+		if repo, err := repository.Current(); err == nil {
+			host = repo.Host
+		} else {
+			host = "github.com"
+		}
+	} else {
+		debug.Log("runEdit", "repo_source", "current_directory")
+		repo, err := repository.Current()
+		if err != nil {
+			debug.Error("runEdit", err, "stage", "repository.Current")
+			return fmt.Errorf("could not determine repository: %w (use --repo to specify)", err)
+		}
+		owner = repo.Owner
+		repoName = repo.Name
+		host = repo.Host
+	}
+
+	// Determine API base URL based on host
+	var baseURL string
+	if host == "github.com" || host == "" {
+		baseURL = "https://api.github.com"
+	} else {
+		baseURL = fmt.Sprintf("https://%s/api/v3", host)
+	}
+
+	// Create authenticated HTTP client
+	httpClient, err := api.DefaultHTTPClient()
+	if err != nil {
+		debug.Error("runEdit", err, "stage", "DefaultHTTPClient")
+		return fmt.Errorf("failed to create HTTP client: %w", err)
+	}
+
+	client := &internalapi.Client{
+		HTTPClient: httpClient,
+		BaseURL:    baseURL,
+	}
+
+	// Set up prompter for interactive mode
+	var p cmd.Prompter
+	t := term.FromEnv()
+	isStdinTerminal := term.IsTerminal(os.Stdin)
+	isOutputTerminal := t.IsTerminalOutput()
+
+	if isStdinTerminal && isOutputTerminal {
+		p = prompter.New(os.Stdin, os.Stdout, os.Stderr)
+	}
+
+	runner := &cmd.EditRunner{
+		Client:   client,
+		Owner:    owner,
+		Repo:     repoName,
+		Out:      os.Stdout,
+		Prompter: p,
+	}
+
+	return runner.Run(*opts)
+}
+
 func printUsage() error {
-	usage := `gh-subissue - Create sub-issues in a single command
+	usage := `gh-subissue - Create and manage sub-issues
 
 USAGE
-  gh subissue create [flags]
+  gh subissue <command> [flags]
 
-FLAGS
+COMMANDS
+  create    Create a new sub-issue
+  list      List sub-issues of a parent issue
+  edit      Edit an existing sub-issue (add to project, etc.)
+
+CREATE FLAGS
   -p, --parent <number>    Parent issue number (interactive if omitted)
   -t, --title <string>     Issue title
   -b, --body <string>      Issue body
@@ -166,6 +331,15 @@ FLAGS
   -P, --project <name>     Add to project (interactive if empty)
   -w, --web                Open in browser after creation
 
+LIST FLAGS
+  -p, --parent <number>    Parent issue number (interactive if omitted)
+  -R, --repo <owner/repo>  Repository (defaults to current)
+
+EDIT FLAGS
+  <issue-number>           Issue number to edit (required)
+  -P, --project <name>     Add to project (interactive if empty)
+  -R, --repo <owner/repo>  Repository (defaults to current)
+
 ENVIRONMENT VARIABLES
   GH_DEBUG                 Set to any value to enable debug logging (logfmt to stderr)
 
@@ -174,13 +348,16 @@ EXAMPLES
   gh subissue create --parent 42 --title "Implement feature"
   gh subissue create -p 42 -t "Fix bug" -l bug -a username
   gh subissue create -p 42 -t "Task" --project "Roadmap"          # Add to specific project
-  gh subissue create -p 42 -t "Task" --project ""                 # Interactive project selection
-  echo "Details" | gh subissue create -p 42 -t "Task" --body-file -
+  gh subissue list --parent 42                                    # List sub-issues
+  gh subissue list                                                # Interactive parent selection
+  gh subissue edit 43 --project "Roadmap"                         # Add issue to project
   GH_DEBUG=1 gh subissue create -p 42 -t "Debug me"               # Enable debug logging
 `
 	fmt.Print(usage)
 	return nil
 }
 
-// Compile-time check: internal/api.Client must implement cmd.APIClient
+// Compile-time checks
 var _ cmd.APIClient = (*internalapi.Client)(nil)
+var _ cmd.ListAPIClient = (*internalapi.Client)(nil)
+var _ cmd.EditAPIClient = (*internalapi.Client)(nil)
