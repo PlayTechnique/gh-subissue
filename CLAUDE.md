@@ -46,6 +46,14 @@ gh extension remove subissue
 ### Error Handling Pattern
 If issue creation succeeds but sub-issue linking fails, print a warning with the issue URL and manual linking instructions rather than failing silently.
 
+### Flag Behavior Pattern
+When a flag accepts an optional value:
+1. **With value**: Use the provided value directly
+2. **Without value (empty string)**: Show TUI selection if interactive, or provide a helpful error with a `gh` CLI command that enables the user to make progress
+3. **Not provided**: Skip the feature entirely
+
+Example: `--project "Roadmap"` uses that project, `--project ""` shows project picker, no `--project` skips project assignment.
+
 ## Testing Approach
 
 This project uses **strict TDD** (Test-Driven Development):

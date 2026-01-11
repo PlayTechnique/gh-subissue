@@ -638,8 +638,8 @@ func TestRunNoPrompterRequiresParent(t *testing.T) {
 	if !strings.Contains(err.Error(), "not running interactively") {
 		t.Errorf("error should mention not running interactively, got: %v", err)
 	}
-	if !strings.Contains(err.Error(), "Tip:") {
-		t.Errorf("error should include a tip, got: %v", err)
+	if !strings.Contains(err.Error(), "gh issue list") {
+		t.Errorf("error should include gh issue list command, got: %v", err)
 	}
 }
 

@@ -61,7 +61,7 @@ func (r *ListRunner) Run(opts ListOptions) error {
 	// If no parent specified, prompt for selection
 	if parent == 0 {
 		if r.Prompter == nil {
-			return fmt.Errorf("--parent flag is required when not running interactively")
+			return fmt.Errorf("--parent flag is required when not running interactively\nTo find parent issues: gh issue list -R %s/%s", r.Owner, r.Repo)
 		}
 
 		issues, err := r.Client.ListIssues(api.ListIssuesOptions{

@@ -187,7 +187,7 @@ func (r *Runner) Run(opts Options) error {
 	if opts.Parent == 0 {
 		debug.Log("Runner.Run", "action", "need_parent_selection")
 		if r.Prompter == nil {
-			err := errors.New("--parent flag is required when not running interactively\n\nTip: Run in a terminal for interactive parent selection, or use --parent to specify the parent issue number")
+			err := fmt.Errorf("--parent flag is required when not running interactively\nTo find parent issues: gh issue list -R %s/%s", r.Owner, r.Repo)
 			debug.Error("Runner.Run", err, "reason", "no_prompter")
 			return err
 		}
@@ -338,13 +338,24 @@ func (r *Runner) addToProject(opts Options, result *api.IssueResult) {
 		// Interactive mode - prompt user to select
 		if r.Prompter == nil {
 			debug.Log("addToProject", "action", "skip_interactive", "reason", "no_prompter")
-			fmt.Fprintf(r.Out, "Warning: --project requires a project name when not running interactively\n")
+			if len(projects) == 0 {
+				fmt.Fprintf(r.Out, "Warning: no projects found for this repository\n")
+				fmt.Fprintf(r.Out, "Create a project at: https://github.com/%s/%s/projects\n", r.Owner, r.Repo)
+			} else {
+				fmt.Fprintf(r.Out, "Warning: --project requires a project name when not running interactively\n")
+				fmt.Fprintf(r.Out, "Available projects:")
+				for _, p := range projects {
+					fmt.Fprintf(r.Out, " %q", p.Title)
+				}
+				fmt.Fprintf(r.Out, "\nTo add to project later: gh subissue edit %d --project %q\n", result.Number, projects[0].Title)
+			}
 			return
 		}
 
 		if len(projects) == 0 {
 			debug.Log("addToProject", "action", "no_projects_found")
 			fmt.Fprintf(r.Out, "Warning: no projects found for this repository\n")
+			fmt.Fprintf(r.Out, "Create a project at: https://github.com/%s/%s/projects\n", r.Owner, r.Repo)
 			return
 		}
 
@@ -366,6 +377,13 @@ func (r *Runner) addToProject(opts Options, result *api.IssueResult) {
 		if selectedProject == nil {
 			debug.Log("addToProject", "action", "project_not_found", "project_name", opts.Project.Value)
 			fmt.Fprintf(r.Out, "Warning: project %q not found\n", opts.Project.Value)
+			if len(projects) > 0 {
+				fmt.Fprintf(r.Out, "Available projects:")
+				for _, p := range projects {
+					fmt.Fprintf(r.Out, " %q", p.Title)
+				}
+				fmt.Fprintf(r.Out, "\n")
+			}
 			return
 		}
 	}

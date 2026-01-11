@@ -91,11 +91,19 @@ func (r *EditRunner) Run(opts EditOptions) error {
 	if opts.Project.Value == "" {
 		// Interactive mode
 		if r.Prompter == nil {
-			return fmt.Errorf("--project requires a project name when not running interactively")
+			// List available projects in error message
+			if len(projects) == 0 {
+				return fmt.Errorf("no projects found for this repository\nCreate a project at: https://github.com/%s/%s/projects", r.Owner, r.Repo)
+			}
+			var names []string
+			for _, p := range projects {
+				names = append(names, p.Title)
+			}
+			return fmt.Errorf("--project requires a project name when not running interactively\nAvailable projects: %v\nExample: gh subissue edit %d --project %q", names, opts.IssueNumber, projects[0].Title)
 		}
 
 		if len(projects) == 0 {
-			return fmt.Errorf("no projects found for this repository")
+			return fmt.Errorf("no projects found for this repository\nCreate a project at: https://github.com/%s/%s/projects", r.Owner, r.Repo)
 		}
 
 		project, err := SelectProject(r.Prompter, projects)
@@ -113,7 +121,11 @@ func (r *EditRunner) Run(opts EditOptions) error {
 			}
 		}
 		if selectedProject == nil {
-			return fmt.Errorf("project %q not found", opts.Project.Value)
+			var names []string
+			for _, p := range projects {
+				names = append(names, p.Title)
+			}
+			return fmt.Errorf("project %q not found\nAvailable projects: %v", opts.Project.Value, names)
 		}
 	}
 
