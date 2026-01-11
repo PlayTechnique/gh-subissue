@@ -170,6 +170,15 @@ func TestReposRunnerRun(t *testing.T) {
 			wantOutput: "REPOSITORY          SUB-ISSUES\ntestorg/repo2       disabled (issues off)\ntestorg/repo3       disabled (archived)\n",
 			wantErr:    false,
 		},
+		{
+			name: "no-header flag",
+			opts: ReposOptions{Owner: "testorg", Limit: 30, NoHeader: true},
+			repos: []api.Repository{
+				{Name: "repo1", FullName: "testorg/repo1", HasIssues: true, Archived: false},
+			},
+			wantOutput: "testorg/repo1       enabled\n",
+			wantErr:    false,
+		},
 	}
 
 	for _, tt := range tests {

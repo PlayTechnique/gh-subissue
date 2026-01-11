@@ -11,8 +11,9 @@ import (
 
 // ListOptions contains the parsed command line options for the list command.
 type ListOptions struct {
-	Parent int
-	Repo   string
+	Parent   int
+	Repo     string
+	NoHeader bool
 }
 
 // ParseListFlags parses command line flags for the list command.
@@ -27,6 +28,8 @@ func ParseListFlags(args []string) (*ListOptions, error) {
 
 	fs.StringVar(&opts.Repo, "repo", "", "Repository (owner/repo)")
 	fs.StringVar(&opts.Repo, "R", "", "Repository (owner/repo)")
+
+	fs.BoolVar(&opts.NoHeader, "no-header", false, "Omit table header from output")
 
 	if err := fs.Parse(args); err != nil {
 		debug.Error("ParseListFlags", err, "stage", "fs.Parse")
@@ -99,6 +102,9 @@ func (r *ListRunner) Run(opts ListOptions) error {
 		return nil
 	}
 
+	if !opts.NoHeader {
+		fmt.Fprintf(r.Out, "NUMBER\tTITLE\n")
+	}
 	for _, issue := range subIssues {
 		fmt.Fprintf(r.Out, "#%d\t%s\n", issue.Number, issue.Title)
 	}

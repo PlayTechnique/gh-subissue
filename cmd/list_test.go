@@ -97,7 +97,16 @@ func TestListRunnerRun(t *testing.T) {
 				{Number: 43, Title: "Sub-issue 1", URL: "https://github.com/owner/repo/issues/43"},
 				{Number: 44, Title: "Sub-issue 2", URL: "https://github.com/owner/repo/issues/44"},
 			},
-			wantOutput: "#43\tSub-issue 1\n#44\tSub-issue 2\n",
+			wantOutput: "NUMBER\tTITLE\n#43\tSub-issue 1\n#44\tSub-issue 2\n",
+			wantErr:    false,
+		},
+		{
+			name: "lists sub-issues with no-header",
+			opts: ListOptions{Parent: 42, NoHeader: true},
+			subIssues: []api.Issue{
+				{Number: 43, Title: "Sub-issue 1", URL: "https://github.com/owner/repo/issues/43"},
+			},
+			wantOutput: "#43\tSub-issue 1\n",
 			wantErr:    false,
 		},
 		{

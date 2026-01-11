@@ -15,6 +15,7 @@ type ReposOptions struct {
 	Limit    int
 	Enabled  bool
 	Disabled bool
+	NoHeader bool
 }
 
 // ParseReposFlags parses command line flags for the repos command.
@@ -29,6 +30,7 @@ func ParseReposFlags(args []string) (*ReposOptions, error) {
 
 	fs.BoolVar(&opts.Enabled, "enabled", false, "Show only repos where sub-issues work")
 	fs.BoolVar(&opts.Disabled, "disabled", false, "Show only repos where sub-issues don't work")
+	fs.BoolVar(&opts.NoHeader, "no-header", false, "Omit table header from output")
 
 	// Extract positional owner arg before flags (if present)
 	// Go's flag package stops at the first non-flag, so we need to
@@ -154,7 +156,9 @@ func (r *ReposRunner) Run(opts ReposOptions) error {
 	}
 
 	// Print header and repos
-	fmt.Fprintf(r.Out, "%-19s %s\n", "REPOSITORY", "SUB-ISSUES")
+	if !opts.NoHeader {
+		fmt.Fprintf(r.Out, "%-19s %s\n", "REPOSITORY", "SUB-ISSUES")
+	}
 	for _, repo := range filtered {
 		status := repoStatus(repo)
 		fmt.Fprintf(r.Out, "%-19s %s\n", repo.FullName, status)
