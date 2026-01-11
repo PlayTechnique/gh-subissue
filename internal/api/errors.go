@@ -30,17 +30,17 @@ func newAPIError(statusCode int, message, operation string) *APIError {
 
 	switch statusCode {
 	case http.StatusUnauthorized: // 401
-		e.Hint = "Run 'gh auth login' to authenticate"
+		e.Hint = "Authenticate with:\n  gh auth login"
 	case http.StatusForbidden: // 403
-		e.Hint = "Check that you have write access to this repository"
+		e.Hint = "Check repository access with:\n  gh repo view"
 	case http.StatusNotFound: // 404
-		e.Hint = "Verify the repository exists and you have access to it"
+		e.Hint = "Verify the repository exists:\n  gh repo view <owner/repo>"
 	case http.StatusGone: // 410
-		e.Hint = "Issues are disabled for this repository. Enable them in repository Settings > Features"
+		e.Hint = "Issues are disabled for this repository. Enable them in Settings > Features, or check with:\n  gh repo view --json hasIssuesEnabled"
 	case http.StatusUnprocessableEntity: // 422
 		e.Hint = "Check that all required fields are provided and valid"
 	case http.StatusTooManyRequests: // 429
-		e.Hint = "Rate limited by GitHub. Wait a moment and try again"
+		e.Hint = "Rate limited by GitHub. Check status with:\n  gh api rate_limit"
 	}
 
 	return e

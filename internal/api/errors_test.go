@@ -26,7 +26,7 @@ func TestAPIError(t *testing.T) {
 			statusCode:     http.StatusForbidden,
 			message:        "Must have write access",
 			operation:      "create issue",
-			wantHintSubstr: "write access",
+			wantHintSubstr: "gh repo view",
 		},
 		{
 			name:           "404 not found",

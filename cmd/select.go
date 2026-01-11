@@ -13,7 +13,7 @@ func SelectParentIssue(p Prompter, issues []api.Issue) (int, error) {
 	debug.Log("SelectParentIssue", "issue_count", len(issues))
 
 	if len(issues) == 0 {
-		err := fmt.Errorf("no open issues found in repository\n\nHint: Create a parent issue first, or use --parent with an existing issue number")
+		err := fmt.Errorf("no open issues found in repository\n\nTo create a parent issue first:\n  gh issue create\n\nOr use --parent with an existing issue number")
 		debug.Error("SelectParentIssue", err)
 		return 0, err
 	}
