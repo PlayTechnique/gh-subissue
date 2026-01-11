@@ -398,10 +398,10 @@ USAGE
   gh subissue <command> [flags]
 
 COMMANDS
-  create    Create a new sub-issue
-  list      List sub-issues of a parent issue
-  edit      Edit an existing sub-issue (add to project, etc.)
-  repos     List repositories and their sub-issue availability
+  create    Create a new issue and link it to a parent in one step
+  list      List all sub-issues under a parent issue
+  edit      Modify a sub-issue (e.g., add to a project)
+  repos     List repositories with their sub-issues status (enabled/disabled)
 
 CREATE FLAGS
   -p, --parent <number>    Parent issue number (interactive if omitted)
@@ -418,6 +418,7 @@ CREATE FLAGS
 LIST FLAGS
   -p, --parent <number>    Parent issue number (interactive if omitted)
   -R, --repo <owner/repo>  Repository (defaults to current)
+      --no-header          Omit table header from output
 
 EDIT FLAGS
   <issue-number>           Issue number to edit (required)
@@ -429,6 +430,7 @@ REPOS FLAGS
   -L, --limit <int>        Maximum repos to list (default 30)
       --enabled            Show only repos where sub-issues work
       --disabled           Show only repos where sub-issues don't work
+      --no-header          Omit table header from output
 
 ENVIRONMENT VARIABLES
   GH_DEBUG                 Set to any value to enable debug logging (logfmt to stderr)
@@ -441,9 +443,9 @@ EXAMPLES
   gh subissue list --parent 42                                    # List sub-issues
   gh subissue list                                                # Interactive parent selection
   gh subissue edit 43 --project "Roadmap"                         # Add issue to project
-  gh subissue repos                                               # List your repos
-  gh subissue repos my-org                                        # List org repos
-  gh subissue repos --enabled                                     # Only repos with sub-issues
+  gh subissue repos                                               # List your repos with sub-issues status
+  gh subissue repos my-org                                        # List org repos with sub-issues status
+  gh subissue repos --enabled                                     # Only repos where sub-issues are enabled
   GH_DEBUG=1 gh subissue create -p 42 -t "Debug me"               # Enable debug logging
 `
 	fmt.Print(usage)

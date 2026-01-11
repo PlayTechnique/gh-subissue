@@ -39,9 +39,15 @@ gh extension remove subissue
 - `github.com/spf13/cobra` — CLI framework
 
 ### Repository Resolution Order
-1. Explicit `--repo` flag
-2. `GH_REPO` environment variable
-3. Git remote in current directory
+
+Commands that operate on a repository (`create`, `list`, `edit`) resolve the target repository in this order:
+
+1. **Explicit `--repo` flag** — always takes precedence
+2. **`GH_REPO` environment variable** — if set
+3. **Git remote in current directory** — auto-detected via go-gh's `repository.Current()`
+4. **Interactive prompt** — if running interactively and above methods fail
+
+When run inside a git repository with a GitHub remote, the command should automatically use that repository without prompting. Only prompt for repository when all automatic detection methods fail.
 
 ### Error Handling Pattern
 If issue creation succeeds but sub-issue linking fails, print a warning with the issue URL and manual linking instructions rather than failing silently.
