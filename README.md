@@ -1,5 +1,5 @@
 # Methodolgy
-gh-subissue is a vibe-coded tool. 
+gh-subissue is vibe-coded on main, human reviewed for tags. Tags generate releases. 
 
 My method here is to ask Claude (normally Opus) to develop features with particular style guidelines in Claude.md, such as "if an option that requires an argument is invoked without the argument, defer to a TUI interface". It's my best guidance to make this tool feel like a GitHub CLI plugin that follows their style.
 
@@ -13,8 +13,18 @@ Sub-issues are GitHub's way to break down large issues into smaller, trackable p
 
 ## Installation
 
+**From a release (recommended):**
 ```bash
 gh extension install gwynforthewyn/gh-subissue
+```
+
+This downloads a precompiled binary for your platform from the latest [release](https://github.com/gwynforthewyn/gh-subissue/releases).
+
+**From source:**
+```bash
+git clone https://github.com/gwynforthewyn/gh-subissue.git
+cd gh-subissue
+gh extension install .
 ```
 
 **Requirements:**
