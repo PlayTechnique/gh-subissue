@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/gwyn/gh-subissue/internal/api"
+	"github.com/gwyn/gh-subissue/internal/debug"
 )
 
 // Options contains the parsed command line options.
@@ -38,6 +39,8 @@ func (s *stringSlice) Set(value string) error {
 
 // ParseFlags parses command line arguments and returns Options.
 func ParseFlags(args []string) (*Options, error) {
+	debug.Log("ParseFlags", "args", args)
+
 	fs := flag.NewFlagSet("create", flag.ContinueOnError)
 
 	opts := &Options{}
@@ -70,50 +73,65 @@ func ParseFlags(args []string) (*Options, error) {
 	fs.BoolVar(&opts.Web, "w", false, "Open in browser after creation")
 
 	if err := fs.Parse(args); err != nil {
+		debug.Error("ParseFlags", err, "stage", "fs.Parse")
 		return nil, err
 	}
 
 	opts.Assignees = assignees
 	opts.Labels = labels
 
-	if opts.Parent == 0 {
-		return nil, errors.New("--parent flag is required")
-	}
-
+	debug.Log("ParseFlags", "parsed_parent", opts.Parent, "title", opts.Title, "repo", opts.Repo)
 	return opts, nil
 }
 
 // ParseRepo parses an owner/repo string into owner and repo parts.
 func ParseRepo(s string) (owner, repo string, err error) {
+	debug.Log("ParseRepo", "input", s)
+
 	if s == "" {
-		return "", "", errors.New("repository cannot be empty")
+		err := errors.New("repository cannot be empty")
+		debug.Error("ParseRepo", err)
+		return "", "", err
 	}
 
 	parts := strings.Split(s, "/")
 	if len(parts) != 2 {
-		return "", "", fmt.Errorf("invalid repository format: %q (expected owner/repo)", s)
+		err := fmt.Errorf("invalid repository format: %q (expected owner/repo)", s)
+		debug.Error("ParseRepo", err)
+		return "", "", err
 	}
 
+	debug.Log("ParseRepo", "owner", parts[0], "repo", parts[1])
 	return parts[0], parts[1], nil
 }
 
 // ReadBody reads the issue body from a file or stdin.
 func ReadBody(path string, stdin io.Reader) (string, error) {
+	debug.Log("ReadBody", "path", path, "stdin_nil", stdin == nil)
+
 	if path == "-" {
 		if stdin == nil {
-			return "", errors.New("stdin is nil")
+			err := errors.New("stdin is nil")
+			debug.Error("ReadBody", err)
+			return "", err
 		}
+		debug.Log("ReadBody", "source", "stdin")
 		data, err := io.ReadAll(stdin)
 		if err != nil {
+			debug.Error("ReadBody", err, "stage", "read_stdin")
 			return "", fmt.Errorf("failed to read from stdin: %w", err)
 		}
+		debug.Log("ReadBody", "bytes_read", len(data))
 		return string(data), nil
 	}
 
+	debug.Log("ReadBody", "source", "file", "file_path", path)
 	data, err := os.ReadFile(path)
 	if err != nil {
+		debug.Error("ReadBody", err, "stage", "read_file")
 		return "", fmt.Errorf("failed to read file %q: %w", path, err)
 	}
+	debug.Log("ReadBody", "bytes_read", len(data))
 	return string(data), nil
 }
 
@@ -122,6 +140,7 @@ type APIClient interface {
 	CreateIssue(opts api.CreateIssueOptions) (*api.IssueResult, error)
 	LinkSubIssue(opts api.LinkSubIssueOptions) error
 	GetIssue(owner, repo string, number int) (*api.Issue, error)
+	ListIssues(opts api.ListIssuesOptions) ([]api.Issue, error)
 }
 
 // Runner executes the create subcommand.
@@ -133,29 +152,69 @@ type Runner struct {
 	Stdin          io.Reader
 	ValidateParent bool
 	OpenBrowser    func(url string) error
+	Prompter       Prompter // nil means non-interactive mode
 }
 
 // Run executes the create command with the given options.
 func (r *Runner) Run(opts Options) error {
+	debug.Log("Runner.Run", "owner", r.Owner, "repo", r.Repo, "parent", opts.Parent, "title", opts.Title, "has_prompter", r.Prompter != nil)
+
+	// If no parent specified, prompt interactively
+	if opts.Parent == 0 {
+		debug.Log("Runner.Run", "action", "need_parent_selection")
+		if r.Prompter == nil {
+			err := errors.New("--parent flag is required when not running interactively\n\nTip: Run in a terminal for interactive parent selection, or use --parent to specify the parent issue number")
+			debug.Error("Runner.Run", err, "reason", "no_prompter")
+			return err
+		}
+
+		debug.Log("Runner.Run", "action", "listing_issues_for_selection")
+		issues, err := r.Client.ListIssues(api.ListIssuesOptions{
+			Owner:   r.Owner,
+			Repo:    r.Repo,
+			State:   "open",
+			PerPage: 30,
+		})
+		if err != nil {
+			debug.Error("Runner.Run", err, "stage", "list_issues")
+			return fmt.Errorf("failed to list issues: %w", err)
+		}
+
+		debug.Log("Runner.Run", "issues_found", len(issues))
+		parent, err := SelectParentIssue(r.Prompter, issues)
+		if err != nil {
+			debug.Error("Runner.Run", err, "stage", "select_parent")
+			return err
+		}
+		opts.Parent = parent
+		debug.Log("Runner.Run", "selected_parent", parent)
+	}
+
 	// Read body from file if specified
 	body := opts.Body
 	if opts.BodyFile != "" {
+		debug.Log("Runner.Run", "action", "reading_body_file", "body_file", opts.BodyFile)
 		var err error
 		body, err = ReadBody(opts.BodyFile, r.Stdin)
 		if err != nil {
+			debug.Error("Runner.Run", err, "stage", "read_body")
 			return err
 		}
 	}
 
 	// Validate parent exists if requested
 	if r.ValidateParent {
+		debug.Log("Runner.Run", "action", "validating_parent", "parent", opts.Parent)
 		_, err := r.Client.GetIssue(r.Owner, r.Repo, opts.Parent)
 		if err != nil {
+			debug.Error("Runner.Run", err, "stage", "validate_parent")
 			return fmt.Errorf("parent issue #%d not found: %w", opts.Parent, err)
 		}
+		debug.Log("Runner.Run", "parent_validation", "success")
 	}
 
 	// Create the issue
+	debug.Log("Runner.Run", "action", "creating_issue", "title", opts.Title)
 	result, err := r.Client.CreateIssue(api.CreateIssueOptions{
 		Owner:     r.Owner,
 		Repo:      r.Repo,
@@ -166,10 +225,13 @@ func (r *Runner) Run(opts Options) error {
 		Milestone: opts.Milestone,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create issue: %w", err)
+		debug.Error("Runner.Run", err, "stage", "create_issue")
+		return err // APIError already has good context
 	}
+	debug.Log("Runner.Run", "issue_created", result.Number, "issue_id", result.ID, "url", result.URL)
 
 	// Link as sub-issue
+	debug.Log("Runner.Run", "action", "linking_sub_issue", "parent", opts.Parent, "sub_issue_id", result.ID)
 	linkErr := r.Client.LinkSubIssue(api.LinkSubIssueOptions{
 		Owner:       r.Owner,
 		Repo:        r.Repo,
@@ -179,6 +241,7 @@ func (r *Runner) Run(opts Options) error {
 
 	if linkErr != nil {
 		// Issue was created but linking failed - warn the user
+		debug.Error("Runner.Run", linkErr, "stage", "link_sub_issue", "issue_url", result.URL)
 		fmt.Fprintf(r.Out, "Warning: Issue created but failed to link as sub-issue: %v\n", linkErr)
 		fmt.Fprintf(r.Out, "Issue URL: %s\n", result.URL)
 		fmt.Fprintf(r.Out, "To manually link, run:\n")
@@ -187,11 +250,14 @@ func (r *Runner) Run(opts Options) error {
 		return nil
 	}
 
+	debug.Log("Runner.Run", "result", "success", "url", result.URL)
 	fmt.Fprintln(r.Out, result.URL)
 
 	// Open in browser if requested
 	if opts.Web && r.OpenBrowser != nil {
+		debug.Log("Runner.Run", "action", "opening_browser", "url", result.URL)
 		if err := r.OpenBrowser(result.URL); err != nil {
+			debug.Error("Runner.Run", err, "stage", "open_browser")
 			fmt.Fprintf(r.Out, "Warning: failed to open browser: %v\n", err)
 		}
 	}

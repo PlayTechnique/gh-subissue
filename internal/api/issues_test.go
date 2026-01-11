@@ -251,6 +251,101 @@ func TestLinkSubIssue(t *testing.T) {
 	}
 }
 
+func TestListIssues(t *testing.T) {
+	tests := []struct {
+		name           string
+		opts           ListIssuesOptions
+		serverResponse func(w http.ResponseWriter, r *http.Request)
+		wantCount      int
+		wantErr        bool
+	}{
+		{
+			name: "lists open issues",
+			opts: ListIssuesOptions{
+				Owner:   "testowner",
+				Repo:    "testrepo",
+				State:   "open",
+				PerPage: 30,
+			},
+			serverResponse: func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != "GET" {
+					t.Errorf("expected GET, got %s", r.Method)
+				}
+				if r.URL.Path != "/repos/testowner/testrepo/issues" {
+					t.Errorf("unexpected path: %s", r.URL.Path)
+				}
+				if r.URL.Query().Get("state") != "open" {
+					t.Errorf("expected state=open, got %s", r.URL.Query().Get("state"))
+				}
+				if r.URL.Query().Get("per_page") != "30" {
+					t.Errorf("expected per_page=30, got %s", r.URL.Query().Get("per_page"))
+				}
+
+				w.WriteHeader(http.StatusOK)
+				json.NewEncoder(w).Encode([]map[string]interface{}{
+					{"id": 12345, "number": 1, "title": "First issue", "html_url": "https://github.com/testowner/testrepo/issues/1"},
+					{"id": 12346, "number": 2, "title": "Second issue", "html_url": "https://github.com/testowner/testrepo/issues/2"},
+				})
+			},
+			wantCount: 2,
+			wantErr:   false,
+		},
+		{
+			name: "empty list",
+			opts: ListIssuesOptions{
+				Owner:   "testowner",
+				Repo:    "testrepo",
+				State:   "open",
+				PerPage: 30,
+			},
+			serverResponse: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+				json.NewEncoder(w).Encode([]map[string]interface{}{})
+			},
+			wantCount: 0,
+			wantErr:   false,
+		},
+		{
+			name: "API error",
+			opts: ListIssuesOptions{
+				Owner:   "testowner",
+				Repo:    "testrepo",
+				State:   "open",
+				PerPage: 30,
+			},
+			serverResponse: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusNotFound)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"message": "Not Found",
+				})
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(tt.serverResponse))
+			defer server.Close()
+
+			client := &Client{
+				HTTPClient: server.Client(),
+				BaseURL:    server.URL,
+			}
+
+			issues, err := client.ListIssues(tt.opts)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ListIssues() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if !tt.wantErr && len(issues) != tt.wantCount {
+				t.Errorf("ListIssues() returned %d issues, want %d", len(issues), tt.wantCount)
+			}
+		})
+	}
+}
+
 func TestGetIssue(t *testing.T) {
 	tests := []struct {
 		name           string

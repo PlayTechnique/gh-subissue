@@ -15,6 +15,7 @@ type mockAPIClient struct {
 	createIssueFunc  func(opts api.CreateIssueOptions) (*api.IssueResult, error)
 	linkSubIssueFunc func(opts api.LinkSubIssueOptions) error
 	getIssueFunc     func(owner, repo string, number int) (*api.Issue, error)
+	listIssuesFunc   func(opts api.ListIssuesOptions) ([]api.Issue, error)
 }
 
 func (m *mockAPIClient) CreateIssue(opts api.CreateIssueOptions) (*api.IssueResult, error) {
@@ -36,6 +37,13 @@ func (m *mockAPIClient) GetIssue(owner, repo string, number int) (*api.Issue, er
 		return m.getIssueFunc(owner, repo, number)
 	}
 	return &api.Issue{ID: 99999, Number: number, Title: "Parent"}, nil
+}
+
+func (m *mockAPIClient) ListIssues(opts api.ListIssuesOptions) ([]api.Issue, error) {
+	if m.listIssuesFunc != nil {
+		return m.listIssuesFunc(opts)
+	}
+	return []api.Issue{}, nil
 }
 
 func TestParseFlags(t *testing.T) {
@@ -92,9 +100,13 @@ func TestParseFlags(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:    "missing required parent flag",
-			args:    []string{"--title", "Test Issue"},
-			wantErr: true,
+			name: "no parent flag returns zero",
+			args: []string{"--title", "Test Issue"},
+			want: Options{
+				Parent: 0,
+				Title:  "Test Issue",
+			},
+			wantErr: false,
 		},
 		{
 			name: "minimal flags",
@@ -445,3 +457,139 @@ func TestReadBodyNilReader(t *testing.T) {
 // Ensure io interface is used
 var _ io.Writer = (*bytes.Buffer)(nil)
 var _ io.Reader = (*strings.Reader)(nil)
+
+// mockPrompterInCreate implements Prompter for testing.
+type mockPrompterInCreate struct {
+	selectFunc func(prompt string, defaultValue string, options []string) (int, error)
+}
+
+func (m *mockPrompterInCreate) Select(prompt, defaultValue string, options []string) (int, error) {
+	if m.selectFunc != nil {
+		return m.selectFunc(prompt, defaultValue, options)
+	}
+	return 0, nil
+}
+
+var _ Prompter = (*mockPrompterInCreate)(nil)
+
+func TestRunInteractiveSelection(t *testing.T) {
+	client := &mockAPIClient{
+		listIssuesFunc: func(opts api.ListIssuesOptions) ([]api.Issue, error) {
+			return []api.Issue{
+				{ID: 100, Number: 10, Title: "Parent Issue"},
+				{ID: 200, Number: 20, Title: "Another Issue"},
+			}, nil
+		},
+		createIssueFunc: func(opts api.CreateIssueOptions) (*api.IssueResult, error) {
+			return &api.IssueResult{
+				ID:     300,
+				Number: 30,
+				URL:    "https://github.com/owner/repo/issues/30",
+			}, nil
+		},
+		linkSubIssueFunc: func(opts api.LinkSubIssueOptions) error {
+			if opts.ParentIssue != 10 {
+				t.Errorf("expected parent 10, got %d", opts.ParentIssue)
+			}
+			return nil
+		},
+	}
+
+	prompter := &mockPrompterInCreate{
+		selectFunc: func(prompt, defaultValue string, options []string) (int, error) {
+			// Select the first issue
+			return 0, nil
+		},
+	}
+
+	var output bytes.Buffer
+	runner := &Runner{
+		Client:   client,
+		Owner:    "owner",
+		Repo:     "repo",
+		Out:      &output,
+		Prompter: prompter,
+	}
+
+	opts := Options{
+		Parent: 0, // No parent - should trigger interactive mode
+		Title:  "Sub Issue",
+	}
+
+	err := runner.Run(opts)
+	if err != nil {
+		t.Errorf("Run() error = %v", err)
+	}
+
+	if !strings.Contains(output.String(), "issues/30") {
+		t.Errorf("expected output to contain issue URL, got %q", output.String())
+	}
+}
+
+func TestRunNoPrompterRequiresParent(t *testing.T) {
+	client := &mockAPIClient{}
+
+	var output bytes.Buffer
+	runner := &Runner{
+		Client:   client,
+		Owner:    "owner",
+		Repo:     "repo",
+		Out:      &output,
+		Prompter: nil, // No prompter - non-interactive mode
+	}
+
+	opts := Options{
+		Parent: 0, // No parent
+		Title:  "Sub Issue",
+	}
+
+	err := runner.Run(opts)
+	if err == nil {
+		t.Error("expected error when parent=0 and no prompter")
+	}
+	if !strings.Contains(err.Error(), "--parent flag is required") {
+		t.Errorf("error should mention --parent flag required, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "not running interactively") {
+		t.Errorf("error should mention not running interactively, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "Tip:") {
+		t.Errorf("error should include a tip, got: %v", err)
+	}
+}
+
+func TestRunListIssuesError(t *testing.T) {
+	client := &mockAPIClient{
+		listIssuesFunc: func(opts api.ListIssuesOptions) ([]api.Issue, error) {
+			return nil, errors.New("API error")
+		},
+	}
+
+	prompter := &mockPrompterInCreate{
+		selectFunc: func(prompt, defaultValue string, options []string) (int, error) {
+			return 0, nil
+		},
+	}
+
+	var output bytes.Buffer
+	runner := &Runner{
+		Client:   client,
+		Owner:    "owner",
+		Repo:     "repo",
+		Out:      &output,
+		Prompter: prompter,
+	}
+
+	opts := Options{
+		Parent: 0,
+		Title:  "Sub Issue",
+	}
+
+	err := runner.Run(opts)
+	if err == nil {
+		t.Error("expected error when ListIssues fails")
+	}
+	if !strings.Contains(err.Error(), "list issues") {
+		t.Errorf("error should mention list issues, got: %v", err)
+	}
+}
