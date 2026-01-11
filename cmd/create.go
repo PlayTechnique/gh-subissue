@@ -190,6 +190,33 @@ func (r *Runner) Run(opts Options) error {
 		debug.Log("Runner.Run", "selected_parent", parent)
 	}
 
+	// If no title specified, prompt interactively
+	if opts.Title == "" {
+		debug.Log("Runner.Run", "action", "need_title_input")
+		if r.Prompter == nil {
+			err := errors.New("--title flag is required when not running interactively\n\nTip: Run in a terminal for interactive input, or use --title to specify the issue title")
+			debug.Error("Runner.Run", err, "reason", "no_prompter")
+			return err
+		}
+
+		debug.Log("Runner.Run", "action", "prompting_for_title")
+		title, err := r.Prompter.Input("Title", "")
+		if err != nil {
+			debug.Error("Runner.Run", err, "stage", "input_title")
+			return fmt.Errorf("failed to get title: %w", err)
+		}
+
+		title = strings.TrimSpace(title)
+		if title == "" {
+			err := errors.New("title cannot be empty")
+			debug.Error("Runner.Run", err, "reason", "empty_title")
+			return err
+		}
+
+		opts.Title = title
+		debug.Log("Runner.Run", "entered_title", title)
+	}
+
 	// Read body from file if specified
 	body := opts.Body
 	if opts.BodyFile != "" {

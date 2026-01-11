@@ -461,6 +461,7 @@ var _ io.Reader = (*strings.Reader)(nil)
 // mockPrompterInCreate implements Prompter for testing.
 type mockPrompterInCreate struct {
 	selectFunc func(prompt string, defaultValue string, options []string) (int, error)
+	inputFunc  func(prompt, defaultValue string) (string, error)
 }
 
 func (m *mockPrompterInCreate) Select(prompt, defaultValue string, options []string) (int, error) {
@@ -468,6 +469,13 @@ func (m *mockPrompterInCreate) Select(prompt, defaultValue string, options []str
 		return m.selectFunc(prompt, defaultValue, options)
 	}
 	return 0, nil
+}
+
+func (m *mockPrompterInCreate) Input(prompt, defaultValue string) (string, error) {
+	if m.inputFunc != nil {
+		return m.inputFunc(prompt, defaultValue)
+	}
+	return "", nil
 }
 
 var _ Prompter = (*mockPrompterInCreate)(nil)
@@ -591,5 +599,107 @@ func TestRunListIssuesError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "list issues") {
 		t.Errorf("error should mention list issues, got: %v", err)
+	}
+}
+
+func TestRunInteractiveTitlePrompt(t *testing.T) {
+	client := &mockAPIClient{
+		createIssueFunc: func(opts api.CreateIssueOptions) (*api.IssueResult, error) {
+			if opts.Title != "Prompted Title" {
+				t.Errorf("expected title 'Prompted Title', got %q", opts.Title)
+			}
+			return &api.IssueResult{
+				ID:     300,
+				Number: 30,
+				URL:    "https://github.com/owner/repo/issues/30",
+			}, nil
+		},
+		linkSubIssueFunc: func(opts api.LinkSubIssueOptions) error {
+			return nil
+		},
+	}
+
+	prompter := &mockPrompterInCreate{
+		inputFunc: func(prompt, defaultValue string) (string, error) {
+			if !strings.Contains(prompt, "Title") {
+				t.Errorf("expected prompt to mention Title, got %q", prompt)
+			}
+			return "Prompted Title", nil
+		},
+	}
+
+	var output bytes.Buffer
+	runner := &Runner{
+		Client:   client,
+		Owner:    "owner",
+		Repo:     "repo",
+		Out:      &output,
+		Prompter: prompter,
+	}
+
+	opts := Options{
+		Parent: 42,
+		Title:  "", // No title - should trigger interactive prompt
+	}
+
+	err := runner.Run(opts)
+	if err != nil {
+		t.Errorf("Run() error = %v", err)
+	}
+}
+
+func TestRunNoPrompterRequiresTitle(t *testing.T) {
+	client := &mockAPIClient{}
+
+	var output bytes.Buffer
+	runner := &Runner{
+		Client:   client,
+		Owner:    "owner",
+		Repo:     "repo",
+		Out:      &output,
+		Prompter: nil, // No prompter - non-interactive mode
+	}
+
+	opts := Options{
+		Parent: 42,
+		Title:  "", // No title
+	}
+
+	err := runner.Run(opts)
+	if err == nil {
+		t.Error("expected error when title is empty and no prompter")
+	}
+	if !strings.Contains(err.Error(), "--title") {
+		t.Errorf("error should mention --title flag, got: %v", err)
+	}
+}
+
+func TestRunInteractiveTitleCannotBeEmpty(t *testing.T) {
+	prompter := &mockPrompterInCreate{
+		inputFunc: func(prompt, defaultValue string) (string, error) {
+			return "", nil // User enters empty string
+		},
+	}
+
+	var output bytes.Buffer
+	runner := &Runner{
+		Client:   &mockAPIClient{},
+		Owner:    "owner",
+		Repo:     "repo",
+		Out:      &output,
+		Prompter: prompter,
+	}
+
+	opts := Options{
+		Parent: 42,
+		Title:  "",
+	}
+
+	err := runner.Run(opts)
+	if err == nil {
+		t.Error("expected error when user enters empty title")
+	}
+	if !strings.Contains(err.Error(), "title") {
+		t.Errorf("error should mention title, got: %v", err)
 	}
 }
