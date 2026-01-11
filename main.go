@@ -68,6 +68,21 @@ func runCreate(args []string) error {
 	}
 	debug.Log("runCreate", "parsed_opts", fmt.Sprintf("%+v", opts))
 
+	// Set up prompter for interactive mode first (needed for repo resolution)
+	// Use term.FromEnv() to respect GH_FORCE_TTY and other env vars
+	var p cmd.Prompter
+	t := term.FromEnv()
+	isStdinTerminal := term.IsTerminal(os.Stdin)
+	isOutputTerminal := t.IsTerminalOutput()
+	debug.Log("runCreate", "stdin_is_terminal", isStdinTerminal, "output_is_terminal", isOutputTerminal)
+
+	if isStdinTerminal && isOutputTerminal {
+		p = prompter.New(os.Stdin, os.Stdout, os.Stderr)
+		debug.Log("runCreate", "prompter", "enabled")
+	} else {
+		debug.Log("runCreate", "prompter", "disabled")
+	}
+
 	// Resolve repository
 	var owner, repoName, host string
 	if opts.Repo != "" {
@@ -87,15 +102,28 @@ func runCreate(args []string) error {
 		}
 	} else {
 		debug.Log("runCreate", "repo_source", "current_directory")
-		repo, err := repository.Current()
-		if err != nil {
-			debug.Error("runCreate", err, "stage", "repository.Current")
-			return fmt.Errorf("could not determine repository: %w (use --repo to specify)", err)
+		repo, repoErr := repository.Current()
+		if repoErr != nil {
+			debug.Log("runCreate", "repo_lookup_failed", repoErr.Error())
+			// Try interactive prompt if available
+			if p != nil {
+				debug.Log("runCreate", "action", "prompting_for_repo")
+				owner, repoName, err = cmd.PromptRepository(p)
+				if err != nil {
+					debug.Error("runCreate", err, "stage", "PromptRepository")
+					return err
+				}
+				host = "github.com"
+			} else {
+				debug.Error("runCreate", repoErr, "stage", "repository.Current")
+				return fmt.Errorf("could not determine repository: %w\n\nTo list your repositories:\n  gh repo list\n\nThen specify with --repo:\n  gh subissue create --repo owner/repo", repoErr)
+			}
+		} else {
+			owner = repo.Owner
+			repoName = repo.Name
+			host = repo.Host
+			debug.Log("runCreate", "resolved_repo", owner+"/"+repoName, "host", host)
 		}
-		owner = repo.Owner
-		repoName = repo.Name
-		host = repo.Host
-		debug.Log("runCreate", "resolved_repo", owner+"/"+repoName, "host", host)
 	}
 
 	// Determine API base URL based on host
@@ -124,21 +152,6 @@ func runCreate(args []string) error {
 	// Set up browser opener
 	b := browser.New("", os.Stdout, os.Stderr)
 
-	// Set up prompter for interactive mode
-	// Use term.FromEnv() to respect GH_FORCE_TTY and other env vars
-	var p cmd.Prompter
-	t := term.FromEnv()
-	isStdinTerminal := term.IsTerminal(os.Stdin)
-	isOutputTerminal := t.IsTerminalOutput()
-	debug.Log("runCreate", "stdin_is_terminal", isStdinTerminal, "output_is_terminal", isOutputTerminal)
-
-	if isStdinTerminal && isOutputTerminal {
-		p = prompter.New(os.Stdin, os.Stdout, os.Stderr)
-		debug.Log("runCreate", "prompter", "enabled")
-	} else {
-		debug.Log("runCreate", "prompter", "disabled")
-	}
-
 	runner := &cmd.Runner{
 		Client:         client,
 		Owner:          owner,
@@ -164,6 +177,20 @@ func runList(args []string) error {
 	}
 	debug.Log("runList", "parsed_opts", fmt.Sprintf("%+v", opts))
 
+	// Set up prompter for interactive mode first (needed for repo resolution)
+	var p cmd.Prompter
+	t := term.FromEnv()
+	isStdinTerminal := term.IsTerminal(os.Stdin)
+	isOutputTerminal := t.IsTerminalOutput()
+	debug.Log("runList", "stdin_is_terminal", isStdinTerminal, "output_is_terminal", isOutputTerminal)
+
+	if isStdinTerminal && isOutputTerminal {
+		p = prompter.New(os.Stdin, os.Stdout, os.Stderr)
+		debug.Log("runList", "prompter", "enabled")
+	} else {
+		debug.Log("runList", "prompter", "disabled")
+	}
+
 	// Resolve repository
 	var owner, repoName, host string
 	if opts.Repo != "" {
@@ -180,14 +207,27 @@ func runList(args []string) error {
 		}
 	} else {
 		debug.Log("runList", "repo_source", "current_directory")
-		repo, err := repository.Current()
-		if err != nil {
-			debug.Error("runList", err, "stage", "repository.Current")
-			return fmt.Errorf("could not determine repository: %w (use --repo to specify)", err)
+		repo, repoErr := repository.Current()
+		if repoErr != nil {
+			debug.Log("runList", "repo_lookup_failed", repoErr.Error())
+			// Try interactive prompt if available
+			if p != nil {
+				debug.Log("runList", "action", "prompting_for_repo")
+				owner, repoName, err = cmd.PromptRepository(p)
+				if err != nil {
+					debug.Error("runList", err, "stage", "PromptRepository")
+					return err
+				}
+				host = "github.com"
+			} else {
+				debug.Error("runList", repoErr, "stage", "repository.Current")
+				return fmt.Errorf("could not determine repository: %w\n\nTo list your repositories:\n  gh repo list\n\nThen specify with --repo:\n  gh subissue list --repo owner/repo", repoErr)
+			}
+		} else {
+			owner = repo.Owner
+			repoName = repo.Name
+			host = repo.Host
 		}
-		owner = repo.Owner
-		repoName = repo.Name
-		host = repo.Host
 	}
 
 	// Determine API base URL based on host
@@ -208,16 +248,6 @@ func runList(args []string) error {
 	client := &internalapi.Client{
 		HTTPClient: httpClient,
 		BaseURL:    baseURL,
-	}
-
-	// Set up prompter for interactive mode
-	var p cmd.Prompter
-	t := term.FromEnv()
-	isStdinTerminal := term.IsTerminal(os.Stdin)
-	isOutputTerminal := t.IsTerminalOutput()
-
-	if isStdinTerminal && isOutputTerminal {
-		p = prompter.New(os.Stdin, os.Stdout, os.Stderr)
 	}
 
 	runner := &cmd.ListRunner{
@@ -241,6 +271,20 @@ func runEdit(args []string) error {
 	}
 	debug.Log("runEdit", "parsed_opts", fmt.Sprintf("%+v", opts))
 
+	// Set up prompter for interactive mode first (needed for repo resolution)
+	var p cmd.Prompter
+	t := term.FromEnv()
+	isStdinTerminal := term.IsTerminal(os.Stdin)
+	isOutputTerminal := t.IsTerminalOutput()
+	debug.Log("runEdit", "stdin_is_terminal", isStdinTerminal, "output_is_terminal", isOutputTerminal)
+
+	if isStdinTerminal && isOutputTerminal {
+		p = prompter.New(os.Stdin, os.Stdout, os.Stderr)
+		debug.Log("runEdit", "prompter", "enabled")
+	} else {
+		debug.Log("runEdit", "prompter", "disabled")
+	}
+
 	// Resolve repository
 	var owner, repoName, host string
 	if opts.Repo != "" {
@@ -257,14 +301,27 @@ func runEdit(args []string) error {
 		}
 	} else {
 		debug.Log("runEdit", "repo_source", "current_directory")
-		repo, err := repository.Current()
-		if err != nil {
-			debug.Error("runEdit", err, "stage", "repository.Current")
-			return fmt.Errorf("could not determine repository: %w (use --repo to specify)", err)
+		repo, repoErr := repository.Current()
+		if repoErr != nil {
+			debug.Log("runEdit", "repo_lookup_failed", repoErr.Error())
+			// Try interactive prompt if available
+			if p != nil {
+				debug.Log("runEdit", "action", "prompting_for_repo")
+				owner, repoName, err = cmd.PromptRepository(p)
+				if err != nil {
+					debug.Error("runEdit", err, "stage", "PromptRepository")
+					return err
+				}
+				host = "github.com"
+			} else {
+				debug.Error("runEdit", repoErr, "stage", "repository.Current")
+				return fmt.Errorf("could not determine repository: %w\n\nTo list your repositories:\n  gh repo list\n\nThen specify with --repo:\n  gh subissue edit <issue-number> --repo owner/repo", repoErr)
+			}
+		} else {
+			owner = repo.Owner
+			repoName = repo.Name
+			host = repo.Host
 		}
-		owner = repo.Owner
-		repoName = repo.Name
-		host = repo.Host
 	}
 
 	// Determine API base URL based on host
@@ -285,16 +342,6 @@ func runEdit(args []string) error {
 	client := &internalapi.Client{
 		HTTPClient: httpClient,
 		BaseURL:    baseURL,
-	}
-
-	// Set up prompter for interactive mode
-	var p cmd.Prompter
-	t := term.FromEnv()
-	isStdinTerminal := term.IsTerminal(os.Stdin)
-	isOutputTerminal := t.IsTerminalOutput()
-
-	if isStdinTerminal && isOutputTerminal {
-		p = prompter.New(os.Stdin, os.Stdout, os.Stderr)
 	}
 
 	runner := &cmd.EditRunner{

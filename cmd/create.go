@@ -122,8 +122,15 @@ func ParseRepo(s string) (owner, repo string, err error) {
 		return "", "", err
 	}
 
-	debug.Log("ParseRepo", "owner", parts[0], "repo", parts[1])
-	return parts[0], parts[1], nil
+	owner, repo = parts[0], parts[1]
+	if owner == "" || repo == "" {
+		err := fmt.Errorf("invalid repository format: %q (expected owner/repo)", s)
+		debug.Error("ParseRepo", err)
+		return "", "", err
+	}
+
+	debug.Log("ParseRepo", "owner", owner, "repo", repo)
+	return owner, repo, nil
 }
 
 // ReadBody reads the issue body from a file or stdin.

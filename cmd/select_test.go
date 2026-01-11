@@ -123,6 +123,85 @@ func TestSelectParentIssue(t *testing.T) {
 	}
 }
 
+func TestPromptRepository(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     string
+		inputErr  error
+		wantOwner string
+		wantRepo  string
+		wantErr   bool
+	}{
+		{
+			name:      "valid owner/repo",
+			input:     "owner/repo",
+			wantOwner: "owner",
+			wantRepo:  "repo",
+			wantErr:   false,
+		},
+		{
+			name:      "with whitespace",
+			input:     "  owner/repo  ",
+			wantOwner: "owner",
+			wantRepo:  "repo",
+			wantErr:   false,
+		},
+		{
+			name:    "invalid format - no slash",
+			input:   "ownerrepo",
+			wantErr: true,
+		},
+		{
+			name:    "invalid format - empty owner",
+			input:   "/repo",
+			wantErr: true,
+		},
+		{
+			name:    "invalid format - empty repo",
+			input:   "owner/",
+			wantErr: true,
+		},
+		{
+			name:    "empty input",
+			input:   "",
+			wantErr: true,
+		},
+		{
+			name:     "prompter error propagates",
+			inputErr: errors.New("user cancelled"),
+			wantErr:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &mockPrompter{
+				inputFunc: func(prompt, defaultValue string) (string, error) {
+					if tt.inputErr != nil {
+						return "", tt.inputErr
+					}
+					return tt.input, nil
+				},
+			}
+
+			owner, repo, err := PromptRepository(p)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("PromptRepository() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if !tt.wantErr {
+				if owner != tt.wantOwner {
+					t.Errorf("PromptRepository() owner = %v, want %v", owner, tt.wantOwner)
+				}
+				if repo != tt.wantRepo {
+					t.Errorf("PromptRepository() repo = %v, want %v", repo, tt.wantRepo)
+				}
+			}
+		})
+	}
+}
+
 func TestSelectProject(t *testing.T) {
 	tests := []struct {
 		name        string

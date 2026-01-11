@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/gwyn/gh-subissue/internal/api"
 	"github.com/gwyn/gh-subissue/internal/debug"
@@ -67,4 +68,32 @@ func SelectProject(p Prompter, projects []api.Project) (*api.Project, error) {
 	selected := &projects[idx]
 	debug.Log("SelectProject", "selected_index", idx, "selected_project", selected.Title)
 	return selected, nil
+}
+
+// PromptRepository prompts user to enter a repository in owner/repo format.
+// Returns the owner and repo name separately.
+func PromptRepository(p Prompter) (string, string, error) {
+	debug.Log("PromptRepository", "action", "prompting_user")
+
+	input, err := p.Input("Repository (owner/repo)", "")
+	if err != nil {
+		debug.Error("PromptRepository", err, "stage", "prompt_input")
+		return "", "", err
+	}
+
+	input = strings.TrimSpace(input)
+	if input == "" {
+		err := fmt.Errorf("repository is required")
+		debug.Error("PromptRepository", err)
+		return "", "", err
+	}
+
+	owner, repo, err := ParseRepo(input)
+	if err != nil {
+		debug.Error("PromptRepository", err, "stage", "parse_repo")
+		return "", "", err
+	}
+
+	debug.Log("PromptRepository", "owner", owner, "repo", repo)
+	return owner, repo, nil
 }
