@@ -122,3 +122,78 @@ func TestSelectParentIssue(t *testing.T) {
 		})
 	}
 }
+
+func TestSelectProject(t *testing.T) {
+	tests := []struct {
+		name        string
+		projects    []api.Project
+		selectIdx   int
+		selectErr   error
+		wantProject *api.Project
+		wantErr     bool
+	}{
+		{
+			name: "selects first project",
+			projects: []api.Project{
+				{ID: "PVT_1", Title: "Roadmap", Number: 1},
+				{ID: "PVT_2", Title: "Sprint", Number: 2},
+			},
+			selectIdx:   0,
+			wantProject: &api.Project{ID: "PVT_1", Title: "Roadmap", Number: 1},
+			wantErr:     false,
+		},
+		{
+			name: "selects second project",
+			projects: []api.Project{
+				{ID: "PVT_1", Title: "Roadmap", Number: 1},
+				{ID: "PVT_2", Title: "Sprint", Number: 2},
+			},
+			selectIdx:   1,
+			wantProject: &api.Project{ID: "PVT_2", Title: "Sprint", Number: 2},
+			wantErr:     false,
+		},
+		{
+			name:        "empty project list returns error",
+			projects:    []api.Project{},
+			wantProject: nil,
+			wantErr:     true,
+		},
+		{
+			name: "prompter error propagates",
+			projects: []api.Project{
+				{ID: "PVT_1", Title: "Roadmap", Number: 1},
+			},
+			selectErr:   errors.New("user cancelled"),
+			wantProject: nil,
+			wantErr:     true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &mockPrompter{
+				selectFunc: func(prompt string, defaultValue string, options []string) (int, error) {
+					if tt.selectErr != nil {
+						return 0, tt.selectErr
+					}
+					return tt.selectIdx, nil
+				},
+			}
+
+			project, err := SelectProject(p, tt.projects)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("SelectProject() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if !tt.wantErr {
+				if project.ID != tt.wantProject.ID {
+					t.Errorf("SelectProject() ID = %v, want %v", project.ID, tt.wantProject.ID)
+				}
+				if project.Title != tt.wantProject.Title {
+					t.Errorf("SelectProject() Title = %v, want %v", project.Title, tt.wantProject.Title)
+				}
+			}
+		})
+	}
+}

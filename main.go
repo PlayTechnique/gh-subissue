@@ -163,6 +163,7 @@ FLAGS
   -a, --assignee <user>    Assign users (can repeat)
   -l, --label <name>       Add labels (can repeat)
   -m, --milestone <number> Milestone number
+  -P, --project <name>     Add to project (interactive if empty)
   -w, --web                Open in browser after creation
 
 ENVIRONMENT VARIABLES
@@ -172,6 +173,8 @@ EXAMPLES
   gh subissue create --title "New task"                           # Interactive parent selection
   gh subissue create --parent 42 --title "Implement feature"
   gh subissue create -p 42 -t "Fix bug" -l bug -a username
+  gh subissue create -p 42 -t "Task" --project "Roadmap"          # Add to specific project
+  gh subissue create -p 42 -t "Task" --project ""                 # Interactive project selection
   echo "Details" | gh subissue create -p 42 -t "Task" --body-file -
   GH_DEBUG=1 gh subissue create -p 42 -t "Debug me"               # Enable debug logging
 `

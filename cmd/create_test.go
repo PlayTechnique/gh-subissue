@@ -12,10 +12,13 @@ import (
 
 // mockAPIClient implements the API interface for testing.
 type mockAPIClient struct {
-	createIssueFunc  func(opts api.CreateIssueOptions) (*api.IssueResult, error)
-	linkSubIssueFunc func(opts api.LinkSubIssueOptions) error
-	getIssueFunc     func(owner, repo string, number int) (*api.Issue, error)
-	listIssuesFunc   func(opts api.ListIssuesOptions) ([]api.Issue, error)
+	createIssueFunc      func(opts api.CreateIssueOptions) (*api.IssueResult, error)
+	linkSubIssueFunc     func(opts api.LinkSubIssueOptions) error
+	getIssueFunc         func(owner, repo string, number int) (*api.Issue, error)
+	listIssuesFunc       func(opts api.ListIssuesOptions) ([]api.Issue, error)
+	listProjectsFunc     func(owner, repo string) ([]api.Project, error)
+	getIssueNodeIDFunc   func(owner, repo string, number int) (string, error)
+	addIssueToProjectFunc func(projectID, issueNodeID string) error
 }
 
 func (m *mockAPIClient) CreateIssue(opts api.CreateIssueOptions) (*api.IssueResult, error) {
@@ -44,6 +47,27 @@ func (m *mockAPIClient) ListIssues(opts api.ListIssuesOptions) ([]api.Issue, err
 		return m.listIssuesFunc(opts)
 	}
 	return []api.Issue{}, nil
+}
+
+func (m *mockAPIClient) ListProjects(owner, repo string) ([]api.Project, error) {
+	if m.listProjectsFunc != nil {
+		return m.listProjectsFunc(owner, repo)
+	}
+	return []api.Project{}, nil
+}
+
+func (m *mockAPIClient) GetIssueNodeID(owner, repo string, number int) (string, error) {
+	if m.getIssueNodeIDFunc != nil {
+		return m.getIssueNodeIDFunc(owner, repo, number)
+	}
+	return "I_mock_node_id", nil
+}
+
+func (m *mockAPIClient) AddIssueToProject(projectID, issueNodeID string) error {
+	if m.addIssueToProjectFunc != nil {
+		return m.addIssueToProjectFunc(projectID, issueNodeID)
+	}
+	return nil
 }
 
 func TestParseFlags(t *testing.T) {
@@ -366,6 +390,59 @@ func TestParseFlagsBodyFile(t *testing.T) {
 	}
 	if opts.BodyFile != "-" {
 		t.Errorf("BodyFile = %q, want %q", opts.BodyFile, "-")
+	}
+}
+
+func TestParseFlagsProjectWithValue(t *testing.T) {
+	args := []string{
+		"--parent", "42",
+		"--title", "Test",
+		"--project", "MyProject",
+	}
+
+	opts, err := ParseFlags(args)
+	if err != nil {
+		t.Errorf("ParseFlags() error = %v", err)
+	}
+	if !opts.Project.WasSet {
+		t.Error("Project.WasSet should be true")
+	}
+	if opts.Project.Value != "MyProject" {
+		t.Errorf("Project.Value = %q, want %q", opts.Project.Value, "MyProject")
+	}
+}
+
+func TestParseFlagsProjectInteractive(t *testing.T) {
+	args := []string{
+		"--parent", "42",
+		"--title", "Test",
+		"--project", "",
+	}
+
+	opts, err := ParseFlags(args)
+	if err != nil {
+		t.Errorf("ParseFlags() error = %v", err)
+	}
+	if !opts.Project.WasSet {
+		t.Error("Project.WasSet should be true for interactive mode")
+	}
+	if opts.Project.Value != "" {
+		t.Errorf("Project.Value = %q, want empty string for interactive mode", opts.Project.Value)
+	}
+}
+
+func TestParseFlagsNoProject(t *testing.T) {
+	args := []string{
+		"--parent", "42",
+		"--title", "Test",
+	}
+
+	opts, err := ParseFlags(args)
+	if err != nil {
+		t.Errorf("ParseFlags() error = %v", err)
+	}
+	if opts.Project.WasSet {
+		t.Error("Project.WasSet should be false when flag not provided")
 	}
 }
 
@@ -701,5 +778,211 @@ func TestRunInteractiveTitleCannotBeEmpty(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "title") {
 		t.Errorf("error should mention title, got: %v", err)
+	}
+}
+
+func TestRunWithProjectByName(t *testing.T) {
+	client := &mockAPIClient{
+		createIssueFunc: func(opts api.CreateIssueOptions) (*api.IssueResult, error) {
+			return &api.IssueResult{
+				ID:     12345,
+				Number: 43,
+				URL:    "https://github.com/owner/repo/issues/43",
+			}, nil
+		},
+		linkSubIssueFunc: func(opts api.LinkSubIssueOptions) error {
+			return nil
+		},
+		listProjectsFunc: func(owner, repo string) ([]api.Project, error) {
+			return []api.Project{
+				{ID: "PVT_1", Title: "Roadmap", Number: 1},
+				{ID: "PVT_2", Title: "Sprint", Number: 2},
+			}, nil
+		},
+		getIssueNodeIDFunc: func(owner, repo string, number int) (string, error) {
+			if number != 43 {
+				t.Errorf("expected issue number 43, got %d", number)
+			}
+			return "I_abc123", nil
+		},
+		addIssueToProjectFunc: func(projectID, issueNodeID string) error {
+			if projectID != "PVT_2" {
+				t.Errorf("expected project ID PVT_2, got %s", projectID)
+			}
+			if issueNodeID != "I_abc123" {
+				t.Errorf("expected issue node ID I_abc123, got %s", issueNodeID)
+			}
+			return nil
+		},
+	}
+
+	var output bytes.Buffer
+	runner := &Runner{
+		Client: client,
+		Owner:  "owner",
+		Repo:   "repo",
+		Out:    &output,
+	}
+
+	opts := Options{
+		Parent: 42,
+		Title:  "Sub Issue",
+		Project: OptionalString{
+			Value:  "Sprint",
+			WasSet: true,
+		},
+	}
+
+	err := runner.Run(opts)
+	if err != nil {
+		t.Errorf("Run() error = %v", err)
+	}
+}
+
+func TestRunWithProjectInteractive(t *testing.T) {
+	client := &mockAPIClient{
+		createIssueFunc: func(opts api.CreateIssueOptions) (*api.IssueResult, error) {
+			return &api.IssueResult{
+				ID:     12345,
+				Number: 43,
+				URL:    "https://github.com/owner/repo/issues/43",
+			}, nil
+		},
+		linkSubIssueFunc: func(opts api.LinkSubIssueOptions) error {
+			return nil
+		},
+		listProjectsFunc: func(owner, repo string) ([]api.Project, error) {
+			return []api.Project{
+				{ID: "PVT_1", Title: "Roadmap", Number: 1},
+				{ID: "PVT_2", Title: "Sprint", Number: 2},
+			}, nil
+		},
+		getIssueNodeIDFunc: func(owner, repo string, number int) (string, error) {
+			return "I_abc123", nil
+		},
+		addIssueToProjectFunc: func(projectID, issueNodeID string) error {
+			if projectID != "PVT_1" {
+				t.Errorf("expected project ID PVT_1 (first selected), got %s", projectID)
+			}
+			return nil
+		},
+	}
+
+	prompter := &mockPrompterInCreate{
+		selectFunc: func(prompt, defaultValue string, options []string) (int, error) {
+			// Select first project
+			return 0, nil
+		},
+	}
+
+	var output bytes.Buffer
+	runner := &Runner{
+		Client:   client,
+		Owner:    "owner",
+		Repo:     "repo",
+		Out:      &output,
+		Prompter: prompter,
+	}
+
+	opts := Options{
+		Parent: 42,
+		Title:  "Sub Issue",
+		Project: OptionalString{
+			Value:  "", // Empty value triggers interactive mode
+			WasSet: true,
+		},
+	}
+
+	err := runner.Run(opts)
+	if err != nil {
+		t.Errorf("Run() error = %v", err)
+	}
+}
+
+func TestRunWithProjectNotFound(t *testing.T) {
+	client := &mockAPIClient{
+		createIssueFunc: func(opts api.CreateIssueOptions) (*api.IssueResult, error) {
+			return &api.IssueResult{
+				ID:     12345,
+				Number: 43,
+				URL:    "https://github.com/owner/repo/issues/43",
+			}, nil
+		},
+		linkSubIssueFunc: func(opts api.LinkSubIssueOptions) error {
+			return nil
+		},
+		listProjectsFunc: func(owner, repo string) ([]api.Project, error) {
+			return []api.Project{
+				{ID: "PVT_1", Title: "Roadmap", Number: 1},
+			}, nil
+		},
+	}
+
+	var output bytes.Buffer
+	runner := &Runner{
+		Client: client,
+		Owner:  "owner",
+		Repo:   "repo",
+		Out:    &output,
+	}
+
+	opts := Options{
+		Parent: 42,
+		Title:  "Sub Issue",
+		Project: OptionalString{
+			Value:  "NonExistent",
+			WasSet: true,
+		},
+	}
+
+	err := runner.Run(opts)
+	// Should warn but not fail - issue was created successfully
+	if err != nil {
+		t.Errorf("Run() should not error when project not found, got: %v", err)
+	}
+	if !strings.Contains(output.String(), "Warning") {
+		t.Errorf("expected warning about project not found, got: %s", output.String())
+	}
+}
+
+func TestRunNoProjectFlag(t *testing.T) {
+	addProjectCalled := false
+	client := &mockAPIClient{
+		createIssueFunc: func(opts api.CreateIssueOptions) (*api.IssueResult, error) {
+			return &api.IssueResult{
+				ID:     12345,
+				Number: 43,
+				URL:    "https://github.com/owner/repo/issues/43",
+			}, nil
+		},
+		linkSubIssueFunc: func(opts api.LinkSubIssueOptions) error {
+			return nil
+		},
+		addIssueToProjectFunc: func(projectID, issueNodeID string) error {
+			addProjectCalled = true
+			return nil
+		},
+	}
+
+	var output bytes.Buffer
+	runner := &Runner{
+		Client: client,
+		Owner:  "owner",
+		Repo:   "repo",
+		Out:    &output,
+	}
+
+	opts := Options{
+		Parent: 42,
+		Title:  "Sub Issue",
+		// Project not set
+	}
+
+	err := runner.Run(opts)
+	if err != nil {
+		t.Errorf("Run() error = %v", err)
+	}
+	if addProjectCalled {
+		t.Error("AddIssueToProject should not be called when --project flag not provided")
 	}
 }

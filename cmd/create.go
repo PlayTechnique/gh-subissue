@@ -12,6 +12,23 @@ import (
 	"github.com/gwyn/gh-subissue/internal/debug"
 )
 
+// OptionalString is a flag type that tracks whether it was explicitly set.
+// This allows distinguishing between "not provided", "provided empty", and "provided with value".
+type OptionalString struct {
+	Value  string
+	WasSet bool
+}
+
+func (o *OptionalString) String() string {
+	return o.Value
+}
+
+func (o *OptionalString) Set(value string) error {
+	o.Value = value
+	o.WasSet = true
+	return nil
+}
+
 // Options contains the parsed command line options.
 type Options struct {
 	Parent    int
@@ -23,6 +40,7 @@ type Options struct {
 	Labels    []string
 	Milestone int
 	Web       bool
+	Project   OptionalString
 }
 
 // stringSlice is a flag.Value that collects multiple string values.
@@ -71,6 +89,9 @@ func ParseFlags(args []string) (*Options, error) {
 
 	fs.BoolVar(&opts.Web, "web", false, "Open in browser after creation")
 	fs.BoolVar(&opts.Web, "w", false, "Open in browser after creation")
+
+	fs.Var(&opts.Project, "project", "Add to project (interactive if empty)")
+	fs.Var(&opts.Project, "P", "Add to project (interactive if empty)")
 
 	if err := fs.Parse(args); err != nil {
 		debug.Error("ParseFlags", err, "stage", "fs.Parse")
@@ -141,6 +162,9 @@ type APIClient interface {
 	LinkSubIssue(opts api.LinkSubIssueOptions) error
 	GetIssue(owner, repo string, number int) (*api.Issue, error)
 	ListIssues(opts api.ListIssuesOptions) ([]api.Issue, error)
+	ListProjects(owner, repo string) ([]api.Project, error)
+	GetIssueNodeID(owner, repo string, number int) (string, error)
+	AddIssueToProject(projectID, issueNodeID string) error
 }
 
 // Runner executes the create subcommand.
@@ -277,6 +301,12 @@ func (r *Runner) Run(opts Options) error {
 		return nil
 	}
 
+	// Add to project if requested
+	if opts.Project.WasSet {
+		debug.Log("Runner.Run", "action", "adding_to_project", "project_value", opts.Project.Value)
+		r.addToProject(opts, result)
+	}
+
 	debug.Log("Runner.Run", "result", "success", "url", result.URL)
 	fmt.Fprintln(r.Out, result.URL)
 
@@ -290,4 +320,71 @@ func (r *Runner) Run(opts Options) error {
 	}
 
 	return nil
+}
+
+// addToProject handles adding the created issue to a project.
+func (r *Runner) addToProject(opts Options, result *api.IssueResult) {
+	// List projects
+	projects, err := r.Client.ListProjects(r.Owner, r.Repo)
+	if err != nil {
+		debug.Error("addToProject", err, "stage", "list_projects")
+		fmt.Fprintf(r.Out, "Warning: failed to list projects: %v\n", err)
+		return
+	}
+
+	var selectedProject *api.Project
+
+	if opts.Project.Value == "" {
+		// Interactive mode - prompt user to select
+		if r.Prompter == nil {
+			debug.Log("addToProject", "action", "skip_interactive", "reason", "no_prompter")
+			fmt.Fprintf(r.Out, "Warning: --project requires a project name when not running interactively\n")
+			return
+		}
+
+		if len(projects) == 0 {
+			debug.Log("addToProject", "action", "no_projects_found")
+			fmt.Fprintf(r.Out, "Warning: no projects found for this repository\n")
+			return
+		}
+
+		project, err := SelectProject(r.Prompter, projects)
+		if err != nil {
+			debug.Error("addToProject", err, "stage", "select_project")
+			fmt.Fprintf(r.Out, "Warning: failed to select project: %v\n", err)
+			return
+		}
+		selectedProject = project
+	} else {
+		// Find project by name
+		for i := range projects {
+			if projects[i].Title == opts.Project.Value {
+				selectedProject = &projects[i]
+				break
+			}
+		}
+		if selectedProject == nil {
+			debug.Log("addToProject", "action", "project_not_found", "project_name", opts.Project.Value)
+			fmt.Fprintf(r.Out, "Warning: project %q not found\n", opts.Project.Value)
+			return
+		}
+	}
+
+	// Get issue node ID for GraphQL
+	nodeID, err := r.Client.GetIssueNodeID(r.Owner, r.Repo, result.Number)
+	if err != nil {
+		debug.Error("addToProject", err, "stage", "get_issue_node_id")
+		fmt.Fprintf(r.Out, "Warning: failed to get issue node ID: %v\n", err)
+		return
+	}
+
+	// Add issue to project
+	err = r.Client.AddIssueToProject(selectedProject.ID, nodeID)
+	if err != nil {
+		debug.Error("addToProject", err, "stage", "add_issue_to_project")
+		fmt.Fprintf(r.Out, "Warning: failed to add issue to project: %v\n", err)
+		return
+	}
+
+	debug.Log("addToProject", "result", "success", "project", selectedProject.Title)
 }
