@@ -10,6 +10,7 @@ import (
 // mockPrompter implements Prompter for testing.
 type mockPrompter struct {
 	selectFunc func(prompt string, defaultValue string, options []string) (int, error)
+	inputFunc  func(prompt, defaultValue string) (string, error)
 }
 
 func (m *mockPrompter) Select(prompt string, defaultValue string, options []string) (int, error) {
@@ -17,6 +18,13 @@ func (m *mockPrompter) Select(prompt string, defaultValue string, options []stri
 		return m.selectFunc(prompt, defaultValue, options)
 	}
 	return 0, nil
+}
+
+func (m *mockPrompter) Input(prompt, defaultValue string) (string, error) {
+	if m.inputFunc != nil {
+		return m.inputFunc(prompt, defaultValue)
+	}
+	return "", nil
 }
 
 // Compile-time check: mockPrompter must implement Prompter
