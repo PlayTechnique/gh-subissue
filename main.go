@@ -45,6 +45,9 @@ func run() error {
 	case "edit":
 		debug.Log("run", "action", "runEdit", "edit_args", args[1:])
 		return runEdit(args[1:])
+	case "repos":
+		debug.Log("run", "action", "runRepos", "repos_args", args[1:])
+		return runRepos(args[1:])
 	case "help", "--help", "-h":
 		debug.Log("run", "action", "printUsage", "reason", "help_flag")
 		return printUsage()
@@ -355,6 +358,39 @@ func runEdit(args []string) error {
 	return runner.Run(*opts)
 }
 
+func runRepos(args []string) error {
+	debug.Log("runRepos", "args", args)
+
+	opts, err := cmd.ParseReposFlags(args)
+	if err != nil {
+		debug.Error("runRepos", err, "stage", "ParseReposFlags")
+		return err
+	}
+	debug.Log("runRepos", "parsed_opts", fmt.Sprintf("%+v", opts))
+
+	// Create authenticated HTTP client
+	httpClient, err := api.DefaultHTTPClient()
+	if err != nil {
+		debug.Error("runRepos", err, "stage", "DefaultHTTPClient")
+		return fmt.Errorf("failed to create HTTP client: %w", err)
+	}
+
+	// Use github.com as the default host for repos command
+	baseURL := "https://api.github.com"
+
+	client := &internalapi.Client{
+		HTTPClient: httpClient,
+		BaseURL:    baseURL,
+	}
+
+	runner := &cmd.ReposRunner{
+		Client: client,
+		Out:    os.Stdout,
+	}
+
+	return runner.Run(*opts)
+}
+
 func printUsage() error {
 	usage := `gh-subissue - Create and manage sub-issues
 
@@ -365,6 +401,7 @@ COMMANDS
   create    Create a new sub-issue
   list      List sub-issues of a parent issue
   edit      Edit an existing sub-issue (add to project, etc.)
+  repos     List repositories and their sub-issue availability
 
 CREATE FLAGS
   -p, --parent <number>    Parent issue number (interactive if omitted)
@@ -387,6 +424,12 @@ EDIT FLAGS
   -P, --project <name>     Add to project (interactive if empty)
   -R, --repo <owner/repo>  Repository (defaults to current)
 
+REPOS FLAGS
+  [<owner>]                User or organization to list repos for (defaults to you)
+  -L, --limit <int>        Maximum repos to list (default 30)
+      --enabled            Show only repos where sub-issues work
+      --disabled           Show only repos where sub-issues don't work
+
 ENVIRONMENT VARIABLES
   GH_DEBUG                 Set to any value to enable debug logging (logfmt to stderr)
 
@@ -398,6 +441,9 @@ EXAMPLES
   gh subissue list --parent 42                                    # List sub-issues
   gh subissue list                                                # Interactive parent selection
   gh subissue edit 43 --project "Roadmap"                         # Add issue to project
+  gh subissue repos                                               # List your repos
+  gh subissue repos my-org                                        # List org repos
+  gh subissue repos --enabled                                     # Only repos with sub-issues
   GH_DEBUG=1 gh subissue create -p 42 -t "Debug me"               # Enable debug logging
 `
 	fmt.Print(usage)
@@ -408,3 +454,4 @@ EXAMPLES
 var _ cmd.APIClient = (*internalapi.Client)(nil)
 var _ cmd.ListAPIClient = (*internalapi.Client)(nil)
 var _ cmd.EditAPIClient = (*internalapi.Client)(nil)
+var _ cmd.ReposAPIClient = (*internalapi.Client)(nil)
