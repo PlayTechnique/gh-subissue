@@ -15,7 +15,7 @@ Sub-issues are GitHub's way to break down large issues into smaller, trackable p
 
 **From a release (recommended):**
 ```bash
-gh extension install gwynforthewyn/gh-subissue
+gh extension install playtechnique/gh-subissue
 ```
 
 This downloads a precompiled binary for your platform from the latest [release](https://github.com/gwynforthewyn/gh-subissue/releases).
